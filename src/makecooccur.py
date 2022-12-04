@@ -45,7 +45,6 @@ def worker(proc_num, queue, window_size, type, id_map, data_dir, out_dir):
                         context.pop(0)
                     pair_counts = _process_context(context, pair_counts, window_size)
         decade += ".bin"
-        print(pair_counts)
         export_mat_from_dict(pair_counts, str(out_dir / decade).encode('utf-8'))
 
 def _process_context(context, pair_counts, window_size):
@@ -134,8 +133,6 @@ def main(data, info, type, window_size, workers, out, start, end, step):
     for decade in range(start, end, step):
         queue.put(decade)
     id_map = load_pickle(path_dict)
-    print(id_map)
-    return 
     procs = [
         Process(
         target=worker, 
