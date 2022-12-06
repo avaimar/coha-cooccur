@@ -24,7 +24,7 @@ def worker(proc_num, queue, window_size, type, id_map, data_dir, out_dir):
         print("Proc:", proc_num, "Decade:", decade)
         pair_counts = Counter()
         for file in os.listdir(os.path.join(data_dir, decade)):
-            with open(Path(data_dir, decade, file)) as fp:
+            with open(Path(data_dir, decade, file), encoding='latin-1') as fp:
                 print(proc_num, file)
                 fp.readline()
                 context = []
