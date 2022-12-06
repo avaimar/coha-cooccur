@@ -67,7 +67,7 @@ def main(data, out, start, end, step):
         folder = str(decade)
         print("Processing decade...", folder)
         for file in os.listdir(os.path.join(data, folder)):
-            with open(Path(data, folder, file)) as fp:
+            with open(Path(data, folder, file), encoding='latin-1') as fp:
                 print("Processing file..", folder + "/" + file)
                 process_file(fp, word_dict, lemma_dict, lemma_pos_dict)
 
