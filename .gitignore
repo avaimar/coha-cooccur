@@ -2,3 +2,5 @@
 *.pkl
 data/*/*
 cooccurs/*
+.DS_Store
+.vscode
