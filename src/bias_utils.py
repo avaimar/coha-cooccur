@@ -18,13 +18,18 @@ def compute_mean_vector(model, words, unique=False):
     return mean_vec
 
 
-def compute_bias_score(attribute_vecs, t1_mean, t2_mean):
+def compute_bias_score(attribute_vecs, t1_mean, t2_mean, cosine=False):
     t2_component = attribute_vecs - t2_mean.reshape(1, -1)
     t2_component = np.linalg.norm(t2_component, axis=1)
 
     t1_component = attribute_vecs - t1_mean.reshape(1, -1)
     t1_component = np.linalg.norm(t1_component, axis=1)
     bias_score = np.mean(t1_component - t2_component)
+
+    if cosine:
+        t1_component = np.matmul(attribute_vecs, t1_mean.reshape(-1, 1))
+        t2_component = np.matmul(attribute_vecs, t2_mean.reshape(-1, 1))
+        bias_score = np.mean(t2_component - t1_component)
     return bias_score, t1_component, t2_component
 
 
