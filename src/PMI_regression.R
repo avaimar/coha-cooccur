@@ -69,13 +69,15 @@ for (wlist in c('{} San Bruno All', 'PNAS {} Target Words')) {
   for (decade in unique(wl_df$decade)) {
     interaction_term <- coef(model)[paste0('GroupWhite:factor(decade)', decade)]
     if (decade == 1920) interaction_term <- 0
+    bias_score_decade <- coef(model)['GroupWhite'] + interaction_term
+    if (cosine_sim == 'True') bias_score_decade <- -1 * bias_score_decade
     
     imputation_df <- rbind(
       imputation_df, data.table(
         wl=wlist,
         decade=decade, 
         bias_type='imputed',
-        bias_score=coef(model)['GroupWhite'] + interaction_term))
+        bias_score=bias_score_decade))
   }
   
   # Add original bias scores
