@@ -1,43 +1,17 @@
-from gensim.models import KeyedVectors
+import argparse
 import glob
 import json
 from matrixserializer import load_matrix
 from nltk.corpus import stopwords
 import numpy as np
 import os
+from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
 from ioutils import load_pickle, mkdir
 
-
-def load_coha():
-    vectors_list = glob.glob('../../Replication-Garg-2018/data/coha-word/*vectors.txt')
-    vectors = {}
-    for file_name in vectors_list:
-        file_decade = file_name.split(os.path.sep)[-1][:4]
-        vectors[file_decade] = KeyedVectors.load_word2vec_format(file_name, binary=False, no_header=True)
-    return vectors
-
-# Parameters
-K = 5  # HistWords indicate they follow Levy et al. (2015) in order to set hyperparameters.
-# Seems like k is 5 per https://aclanthology.org/Q15-1016.pdf but unsure
-
-# Paths
-bin_dir = '../cooccurs/word/4'
-word_dict_pkl = '../info/word-dict.pkl'
-output_path = '../results/PMI'
-
-mkdir(output_path)
-
-# Load word dictionary and word lists
-word_dict = load_pickle(word_dict_pkl)
-with open('../../Local/word_lists/word_lists_all.json', 'r') as file:
-    word_list_all = json.load(file)
-vectors = load_coha()
-
-# Add stopwords
-word_list_all['Stopwords'] = stopwords.words('english')
+from bias_utils import load_coha, load_coha_SGNS
 
 
 def get_word_df(w_dict, m, w=None, w_idx=None):
@@ -84,10 +58,7 @@ def idx_to_word(idx, w_dict):
 # CSR matrix is in the format (word, context)
 def process_matrix(m, w_dict, word_lists, v):
     wls = ['Asian_San_Bruno_All', 'White_San_Bruno_All', 'Otherization Words',
-           'PNAS Asian Target Words', 'PNAS White Target Words',
-           'Stopwords']
-    #wls = ['Asian_San_Bruno_All', 'White_San_Bruno_All', 'Otherization Words',
-    #       'PNAS Asian Target Words', 'PNAS White Target Words']
+           'PNAS Asian Target Words', 'PNAS White Target Words']
     m_df = pd.DataFrame()
     for wl in tqdm(wls):
         for w in word_lists[wl]:
@@ -116,28 +87,87 @@ def process_matrix(m, w_dict, word_lists, v):
     return m_df
 
 
-# Process each matrix
-bin_files = glob.glob(os.path.join(bin_dir, '*.bin'))
+def main(args, vectors):
+    # Load word dictionary and word lists
+    word_dict = load_pickle(args.word_dict_pkl)
+    with open(f'{args.wlist_dir}/word_lists_all.json', 'r') as file:
+        word_list_all = json.load(file)
 
-pmi_df = pd.DataFrame()
-if os.path.exists(os.path.join(output_path, 'pmi.csv')):
-    pmi_df = pd.read_csv(os.path.join(output_path, 'pmi.csv'))
+    # Add stopwords
+    word_list_all['Stopwords'] = stopwords.words('english')
 
-for bin_file in tqdm(bin_files):
-    decade = bin_file.split(os.path.sep)[-1].replace('.bin', '')
+    # Process each decadal matrix
+    bin_files = glob.glob(os.path.join(args.bin_dir, '*.bin'))
 
-    if 'decade' in pmi_df.columns and int(decade) in list(pmi_df['decade'].unique()):
-        continue
-    matrix = load_matrix(bin_file)
-    matrix_df = process_matrix(m=matrix, w_dict=word_dict, word_lists=word_list_all, v=vectors[decade])
-    matrix_df['decade'] = int(decade)
+    pmi_df = pd.DataFrame()
+    if os.path.exists(os.path.join(args.output_dir, 'pmi.csv')):
+        pmi_df = pd.read_csv(os.path.join(args.output_dir, 'pmi.csv'))
 
-    # Compute PMI
-    matrix_df['PMI'] = matrix_df.apply(
-        lambda row: np.log((row['#wc'] * row['D']) / (row['#w'] * row['#c'])) - np.log(K) if row['#w'] * row[
-            '#c'] != 0 else None, axis=1)
+    for bin_file in tqdm(bin_files):
+        decade = bin_file.split(os.path.sep)[-1].replace('.bin', '')
 
-    pmi_df = pd.concat([pmi_df, matrix_df])
+        if 'decade' in pmi_df.columns and int(decade) in list(pmi_df['decade'].unique()):
+            continue
+        #if decade != '1990':
+        #    continue
+        matrix = load_matrix(bin_file)
+        matrix_df = process_matrix(m=matrix, w_dict=word_dict, word_lists=word_list_all, v=vectors[decade])
+        matrix_df['decade'] = int(decade)
 
-    # Save output
-    pmi_df.to_csv(os.path.join(output_path, 'pmi.csv'), index=False)
+        # Compute PMI
+        matrix_df['PMI'] = matrix_df.apply(
+            lambda row: np.log((row['#wc'] * row['D']) / (row['#w'] * row['#c'])) - np.log(args.K) if row['#w'] * row[
+                '#c'] != 0 else None, axis=1)
+
+        pmi_df = pd.concat([pmi_df, matrix_df])
+
+        # Save output
+        pmi_df.to_csv(os.path.join(args.output_dir, 'pmi.csv'), index=False)
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-K", type=int)
+    parser.add_argument("-d", type=int, default=300)
+    parser.add_argument("-vectors", type=str)
+    parser.add_argument("-vectors_dir", type=str)
+    parser.add_argument("-wlist_dir", type=str)
+    parser.add_argument("-bin_dir", type=str)
+    parser.add_argument("-word_dict_pkl", type=str)
+    parser.add_argument("-output_dir", type=str)
+
+    args = parser.parse_args()
+
+    # Paths
+    args.bin_dir = '../cooccurs/word/4'
+    args.wlist_dir = '../../Local/word_lists/'
+    if args.vectors == 'HistWords':
+        args.vectors_dir = '../../Replication-Garg-2018/data/coha-word'
+    else:
+        args.vectors_dir = '../../COHA-SGNS/results/vectors'
+    args.word_dict_pkl = '../info/word-dict.pkl'
+
+    if args.vectors == 'HistWords':
+        args.K = 5  # HistWords indicate they follow Levy et al. (2015) in order to set hyperparameters.
+        # Seems like k is 5 per https://aclanthology.org/Q15-1016.pdf but unsure
+        assert args.d == 300
+
+        args.output_dir = os.path.join('..', 'results', f'{args.vectors}', 'PMI')
+        os.makedirs(args.output_dir)
+
+        vectors = load_coha(args.vectors_dir)
+        main(args, vectors)
+
+    elif args.vectors == 'SGNS':
+        # Need to run for each negative sampling parameter
+        for negative in tqdm(list(range(0, 30, 5))):
+            args.output_dir = os.path.join('..', 'results', 'SGNS', f'{args.vectors}-{negative}-{args.d}', 'PMI')
+            if not os.path.exists(args.output_dir):
+                os.makedirs(args.output_dir)
+
+            args.K = negative
+            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True)
+            main(args, vectors)
+    else:
+        raise Exception('[ERROR] Check vectors. ')

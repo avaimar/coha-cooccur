@@ -24,7 +24,7 @@ regression_df <- regression_df %>%
 # * Single surnames
 surname_df <- regression_df %>% filter(other_word != '--Overall--')
 
-# * Aggregate bias scores
+# * Aggregate bias scores (these use the mean surname vector)
 aggregate_df <- regression_df %>% filter(other_word == '--Overall--')
 aggregate_df <- dplyr::select(aggregate_df, wl, decade, bias_score)
 
@@ -80,14 +80,37 @@ for (wlist in c('{} San Bruno All', 'PNAS {} Target Words')) {
         bias_score=bias_score_decade))
   }
   
-  # Add original bias scores
-  true_bias_scores <- dplyr::filter(aggregate_df, wl==wlist) %>%
-    dplyr::mutate(bias_type='true') %>%
-    dplyr::select(wl, decade, bias_type, bias_score)
-  imputation_df <- imputation_df %>% rbind(true_bias_scores)
+  #true_bias_scores <- dplyr::filter(aggregate_df, wl==wlist) %>%
+  #  dplyr::mutate(bias_type='true') %>%
+  #  dplyr::select(wl, decade, bias_type, bias_score)
+  df <- df %>% rbind(imputation_df)
   
-  df <- rbind(df, imputation_df)
 }
+
+# Add original bias scores (the ones computed on the aggregation of disag. scores)
+group_components <- surname_df %>%
+  dplyr::group_by(wl, decade, Group, other_word) %>%
+  dplyr::summarize(Metric = mean(Metric)) %>%
+  dplyr::ungroup()
+
+group_components <- 
+  data.table::dcast(
+    data.table(group_components), 
+    wl + decade + other_word ~ Group, 
+    value.var=c('Metric'))
+
+group_components <- group_components %>%
+  dplyr::mutate(bias_score = Asian - White)
+
+# Average value across otherization words
+group_components <- group_components %>%
+  group_by(wl, decade) %>%
+  summarize(bias_score = mean(bias_score)) %>%
+  ungroup()
+group_components <- group_components %>% dplyr::mutate(bias_type='true')
+df <- rbind(df, dplyr::select(group_components, wl, decade, bias_type, bias_score))
+
+
 
 # Plot
 df <- df %>% dplyr::mutate(
