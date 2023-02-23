@@ -33,10 +33,28 @@ def compute_bias_score(attribute_vecs, t1_mean, t2_mean, cosine=False):
     return bias_score, t1_component, t2_component
 
 
-def load_coha():
-    vectors_list = glob.glob('../../Replication-Garg-2018/data/coha-word/*vectors.txt')
+def load_coha(input_dir):
+    vectors_list = glob.glob(f'{input_dir}/*vectors.txt')
     vectors = {}
     for file_name in vectors_list:
         file_decade = file_name.split(os.path.sep)[-1][:4]
         vectors[file_decade] = KeyedVectors.load_word2vec_format(file_name, binary=False, no_header=True)
+    return vectors
+
+
+def load_coha_SGNS(input_dir, negative, d, norm):
+    norm_str = '-norm' if norm else ''
+    vectors = {}
+    for decade in list(range(1810, 2010, 10)):
+        vectors[f'{decade}'] = KeyedVectors.load(
+            str(os.path.join(input_dir, f"wv-{decade}-{negative}-{d}{norm_str}.kv")))
+    return vectors
+
+
+def load_SPPMI(input_dir, negative):
+    vectors = {}
+    for file in glob.glob(os.path.join(input_dir, f'sppmi-{negative}-*.kv')):
+        decade = file.split(os.path.sep)[-1].replace(f'sppmi-{negative}-', '').replace('.kv', '')
+        vectors[f'{decade}'] = KeyedVectors.load(
+            str(os.path.join(input_dir, f"sppmi-{negative}-{decade}.kv")))
     return vectors
