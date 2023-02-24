@@ -56,11 +56,11 @@ def idx_to_word(idx, w_dict):
 
 # Get surname metrics for each decade
 # CSR matrix is in the format (word, context)
-def process_matrix(m, w_dict, word_lists, v):
+def process_matrix(m, w_dict, word_lists):
     wls = ['Asian_San_Bruno_All', 'White_San_Bruno_All', 'Otherization Words',
            'PNAS Asian Target Words', 'PNAS White Target Words']
     m_df = pd.DataFrame()
-    for wl in tqdm(wls):
+    for wl in wls:
         for w in word_lists[wl]:
             w_df, w_sum = get_word_df(w=w, w_dict=w_dict, m=m)
             if w_df is None:
@@ -73,10 +73,6 @@ def process_matrix(m, w_dict, word_lists, v):
             w_df['#w'] = w_sum
             w_df['#c'] = w_df['c_idx'].apply(lambda idx: get_word_df(w_idx=idx, w_dict=w_dict, m=m)[1])
 
-            # Get w.c (note: we check that ||w||2 and ||c||2 >= 1e-6)
-            w_df['w_dot_c'] = w_df.apply(
-                lambda row: dot_product(w=row['w'], c=row['c'], vec=v), axis=1)
-
             # Append
             w_df['word_list'] = wl
             m_df = pd.concat([m_df, w_df])
@@ -87,7 +83,7 @@ def process_matrix(m, w_dict, word_lists, v):
     return m_df
 
 
-def main(args, vectors):
+def PMI(args):
     # Load word dictionary and word lists
     word_dict = load_pickle(args.word_dict_pkl)
     with open(f'{args.wlist_dir}/word_lists_all.json', 'r') as file:
@@ -111,18 +107,65 @@ def main(args, vectors):
         #if decade != '1990':
         #    continue
         matrix = load_matrix(bin_file)
-        matrix_df = process_matrix(m=matrix, w_dict=word_dict, word_lists=word_list_all, v=vectors[decade])
+        matrix_df = process_matrix(m=matrix, w_dict=word_dict, word_lists=word_list_all)
         matrix_df['decade'] = int(decade)
 
-        # Compute PMI
+        # Compute PMI (only PMI, not PMI - log k)
         matrix_df['PMI'] = matrix_df.apply(
-            lambda row: np.log((row['#wc'] * row['D']) / (row['#w'] * row['#c'])) - np.log(args.K) if row['#w'] * row[
+            lambda row: np.log((row['#wc'] * row['D']) / (row['#w'] * row['#c'])) if row['#w'] * row[
                 '#c'] != 0 else None, axis=1)
 
         pmi_df = pd.concat([pmi_df, matrix_df])
 
         # Save output
         pmi_df.to_csv(os.path.join(args.output_dir, 'pmi.csv'), index=False)
+    return pmi_df
+
+
+def vector_PMIs(args, vectors, pmi):
+    # PMI - log k
+    pmi['PMIk'] = pmi['PMI'].apply(lambda pmi: pmi - np.log(args.K))
+
+    # Get w.c (note: we check that ||w||2 and ||c||2 >= 1e-6)
+    pmi['w_dot_c'] = pmi.apply(
+        lambda row: dot_product(w=row['w'], c=row['c'], vec=vectors[str(row['decade'])]), axis=1)
+
+    pmi.to_csv(os.path.join(args.output_dir, 'complete_pmi.csv'), index=False)
+
+
+def main(args):
+    # Create main matrix (without log k) -- Note: this is COHA dependent only and does not vary
+    # according to the vectors (k, d, HistWords/SGNS).
+    args.output_dir = os.path.join('..', 'results', 'PMI')
+    os.makedirs(args.output_dir, exist_ok=True)
+    pmi_df = PMI(args)
+
+    # Compute pmi data frame for specific vectors: here we add the dot product computation and - log k
+    if args.vectors == 'HistWords':
+        args.K = 5  # HistWords indicate they follow Levy et al. (2015) in order to set hyperparameters.
+        # Seems like k is 5 per https://aclanthology.org/Q15-1016.pdf but unsure
+        args.d = 300
+
+        args.output_dir = os.path.join('..', 'results', f'HistWords', 'PMI')
+        os.makedirs(args.output_dir)
+
+        vectors = load_coha(args.vectors_dir)
+        vector_PMIs(args, vectors, pmi_df)
+
+    elif args.vectors == 'SGNS':
+        # Compute PMI(w, c) - log k -- Need to run for each negative sampling parameter and each dimension
+        # as we include w_dot_c
+        for negative in tqdm(list(range(0, 30, 5))):
+            args.output_dir = os.path.join('..', 'results', 'SGNS', f'{args.vectors}-{negative}-{args.d}')
+            if not os.path.exists(args.output_dir):
+                os.makedirs(args.output_dir)
+
+            args.K = negative
+            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True)
+            vector_PMIs(args, vectors, pmi_df)
+    else:
+        raise Exception('[ERROR] Check vectors. ')
+
 
 
 if __name__ == '__main__':
@@ -148,26 +191,4 @@ if __name__ == '__main__':
         args.vectors_dir = '../../COHA-SGNS/results/vectors'
     args.word_dict_pkl = '../info/word-dict.pkl'
 
-    if args.vectors == 'HistWords':
-        args.K = 5  # HistWords indicate they follow Levy et al. (2015) in order to set hyperparameters.
-        # Seems like k is 5 per https://aclanthology.org/Q15-1016.pdf but unsure
-        assert args.d == 300
-
-        args.output_dir = os.path.join('..', 'results', f'{args.vectors}', 'PMI')
-        os.makedirs(args.output_dir)
-
-        vectors = load_coha(args.vectors_dir)
-        main(args, vectors)
-
-    elif args.vectors == 'SGNS':
-        # Need to run for each negative sampling parameter
-        for negative in tqdm(list(range(0, 30, 5))):
-            args.output_dir = os.path.join('..', 'results', 'SGNS', f'{args.vectors}-{negative}-{args.d}', 'PMI')
-            if not os.path.exists(args.output_dir):
-                os.makedirs(args.output_dir)
-
-            args.K = negative
-            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True)
-            main(args, vectors)
-    else:
-        raise Exception('[ERROR] Check vectors. ')
+    main(args)

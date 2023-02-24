@@ -40,8 +40,9 @@ def build_sppmi_vectors(args):
     # Load PMI data
     pmi_df = pd.read_csv(os.path.join(args.output_dir, 'PMI', 'pmi_eq5.csv'))
 
-    # Build SPPMI rows for each set of names
-    assert len(pmi_df['d'].unique()) == 1 and pmi_df['d'].unique()[0] == 300
+    # Build SPPMI rows for each set of names. Note we use only one dimensionality as SPPMI only
+    # varies with k, not d. The only column varying with d is w_dot_c, which is not used for SPPMI.
+    pmi_df = pmi_df.loc[pmi_df['d'] == 300].copy()
 
     # Use HistWords for fixed vocabulary / fixed word vectors
     vectors = load_coha(input_dir=args.input_dir)
@@ -91,21 +92,28 @@ def bias_scores(wls):
                 white_surnames = wls['White_San_Bruno_All'] if source_list == 'San Bruno' else wls['PNAS White Target Words']
 
                 # Get mean vectors (note: these are post normalized)
-                asian_vec = compute_mean_vector(model=model, words=asian_surnames)
-                white_vec = compute_mean_vector(model=model, words=white_surnames)
+                asian_vec = compute_mean_vector(model=model, words=asian_surnames, pre_normalize=True)
+                white_vec = compute_mean_vector(model=model, words=white_surnames, pre_normalize=True)
 
                 # Get attribute vecs (need to be normalized)
                 attribute_vecs = [model.key_to_index[w] for w in list(set(wls['Otherization Words'])) if present_word(model, w)]
                 attribute_vecs = model.vectors[attribute_vecs, :]
                 attribute_vecs = attribute_vecs / np.linalg.norm(attribute_vecs, axis=1).reshape(-1, 1)
 
-                # Compute bias
-                bscore, _, _ = compute_bias_score(
-                    attribute_vecs=attribute_vecs, t1_mean=white_vec, t2_mean=asian_vec, cosine=True)
+                # Compute "active" surnames
+                n_Asian = len([w for w in asian_surnames if present_word(model, w)])
+                n_White = len([w for w in white_surnames if present_word(model, w)])
+                n_other = len([w for w in set(wls['Otherization Words']) if present_word(model, w)])
 
-                df = pd.DataFrame.from_dict(
-                    {'Word List': [source_list], 'Bias score': [bscore], 'decade': [decade], 'k': [negative]})
-                bias_df = pd.concat([bias_df, df])
+                # Compute bias
+                if asian_vec is not None and white_vec is not None:
+                    bscore, _, _ = compute_bias_score(
+                        attribute_vecs=attribute_vecs, t1_mean=white_vec, t2_mean=asian_vec, cosine=True)
+
+                    df = pd.DataFrame.from_dict(
+                        {'Word List': [source_list], 'Bias score': [bscore], 'decade': [decade], 'k': [negative],
+                         'n_Asian': [n_Asian], 'n_White': [n_White], 'n_otherization': [n_other]})
+                    bias_df = pd.concat([bias_df, df])
 
     # Save file
     os.makedirs(f'{args.results_dir}/bias', exist_ok=True)
@@ -113,8 +121,37 @@ def bias_scores(wls):
     return bias_df
 
 
-def reconstruction_error(wls):
-    pass
+def plot_bias(df):
+    sns.set_theme(style="white", font_scale=1.8)
+    g = sns.FacetGrid(
+        df, row="Word List", margin_titles=True, legend_out=True,
+        hue='Word List', height=5.5, aspect=3.5)
+    for ax in g.axes.flatten():
+        ax.axhline(0, color='grey')
+    g.map(sns.lineplot, 'decade', 'Bias score', errorbar=None)
+    g.set_axis_labels(x_var='Decade', y_var='Bias score (cosine)')
+    g.set_titles(row_template="{row_name}")
+    g.set(xticks=np.arange(1810, 2001, 10))
+    g.figure.savefig(f'{args.results_dir}/bias/bias_trends.png')
+
+    # Surname frequency
+    freq = df.copy()
+    freq = freq.melt(
+        id_vars=['decade', 'Word List'], value_vars=['n_Asian', 'n_White'],
+        var_name='Surname', value_name='n')
+
+    sns.set_theme(style="white", font_scale=1.8)
+    g = sns.FacetGrid(
+        freq, row="Word List", margin_titles=True, legend_out=True,
+        hue='Surname', height=5.5, aspect=3.5, sharey=False)
+    for ax in g.axes.flatten():
+        ax.axhline(0, color='grey')
+    g.map(sns.lineplot, 'decade', 'n')
+    g.set_axis_labels(x_var='Decade', y_var='Number of unique names')
+    g.set_titles(row_template="{row_name}")
+    g.set(xticks=np.arange(1810, 2001, 10))
+    plt.legend(title='Surname')
+    g.figure.savefig(f'{args.results_dir}/bias/name_freq.png')
 
 
 # Functions
@@ -127,9 +164,10 @@ def main(args):
     with open(f'{args.wlist_dir}/word_lists_all.json', 'r') as file:
         word_list_all = json.load(file)
 
-    # Compute bias scores and reconstruction error
+    # Compute bias scores
+    print('[INFO] Computing bias scores')
     bias_df = bias_scores(wls=word_list_all)
-    reconstruction_error(wls=word_list_all)
+    plot_bias(df=bias_df)
 
 
 if __name__ == '__main__':
@@ -139,7 +177,6 @@ if __name__ == '__main__':
     parser.add_argument("-input_dir", type=str)
     parser.add_argument("-results_dir", type=str)
     parser.add_argument("-wlist_dir", type=str)
-    #parser.add_argument("-plot", type=bool, default=False)
 
     args = parser.parse_args()
 
