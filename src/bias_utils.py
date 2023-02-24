@@ -8,13 +8,13 @@ def present_word(model, word):
     return word in model and np.linalg.norm(model.vectors[model.key_to_index[word]]) > 1e-6
 
 
-def compute_mean_vector(model, words, unique=False):
+def compute_mean_vector(model, words, unique=False, pre_normalize=False):
     if unique:
         words = list(set(words))
     nonzero_w = [w for w in words if present_word(model, w)]
     if len(nonzero_w) == 0:
         return None
-    mean_vec = model.get_mean_vector(nonzero_w, pre_normalize=False, ignore_missing=True, post_normalize=True)
+    mean_vec = model.get_mean_vector(nonzero_w, pre_normalize=pre_normalize, ignore_missing=True, post_normalize=True)
     return mean_vec
 
 
