@@ -1,3 +1,8 @@
+"""
+Generates a complete_pmi.csv file including the PMI(w,c) for all words in specific word lists, and
+pmi.csv files including the PMI(w, c) - log k and dotproduct(w, c) for specific vectors (HistWords, SGNS).
+"""
+
 import argparse
 import glob
 import json
@@ -173,7 +178,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-K", type=int)
     parser.add_argument("-d", type=int, default=300)
-    parser.add_argument("-vectors", type=str)
+    parser.add_argument("-vectors", type=str, required=True)
     parser.add_argument("-vectors_dir", type=str)
     parser.add_argument("-wlist_dir", type=str)
     parser.add_argument("-bin_dir", type=str)
