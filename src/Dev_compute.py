@@ -1,3 +1,7 @@
+"""
+Generates the pmi_eq5.csv and word_df.csv including the %Deviation metrics at the (w,c) and word level.
+"""
+
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
@@ -198,7 +202,7 @@ def main(args):
         g.set_axis_labels(x_var='Deviation (%)')
         g.set_titles(col_template="{col_name}", row_template='{row_name}')
         g.add_legend(title='Word List')
-        g.figure.savefig(os.path.join(output_dir, 'PMI', 'density_%dev_word_median-SPPMI.png'))
+        g.figure.savefig(os.path.join(args.output_dir, 'PMI', 'density_%dev_word_median-SPPMI.png'))
 
         # Average Asian / White deviation across k, d
         wl_df = word_df.groupby(['k', 'd', 'Word List', 'decade']).agg(
