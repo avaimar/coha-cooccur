@@ -168,7 +168,7 @@ def regression_inputs(args, vectors, word_df):
                 if otherization_vecs.shape[0] == 0:
                     continue
 
-                # Need to normalize in case we're using SPPMI vectors
+                # Need to normalize in case we're using SPPMI vectors or SGNS vectors
                 otherization_vecs = otherization_vecs / np.linalg.norm(otherization_vecs, axis=1)
 
                 # Otherization word dict
@@ -186,7 +186,8 @@ def regression_inputs(args, vectors, word_df):
 
                         # Compute bias components
                         _, t1_component, _ = bias_utils.compute_bias_score(
-                            attribute_vecs=otherization_vecs, t1_mean=surname_vec, t2_mean=surname_vec, cosine=args.cosine)
+                            attribute_vecs=otherization_vecs, t1_mean=surname_vec, t2_mean=surname_vec,
+                            cosine=args.cosine)
 
                         # Surname dict
                         surname_dict = group_df.loc[group_df['w'] == surname]
@@ -237,17 +238,44 @@ def regression_inputs(args, vectors, word_df):
                     'type': ['aggregated'], 'bias_score': [bias_score]
                 }
                 regression_df = pd.concat([regression_df, pd.DataFrame.from_dict(quart_dict)])
+
+    # Add norms
+    if args.vectors == 'SGNS':
+        norm_df = pd.read_csv(args.norm_dir)
+        norm_df = norm_df.loc[(norm_df['k'] == args.negative) & (norm_df['d'] == args.d)]
+
+        # Add norm for otherization word
+        regression_df = regression_df.merge(
+            norm_df[['word', 'norm', 'decade']],
+            left_on=['decade', 'other_word'], right_on=['decade', 'word'], validate='many_to_one', how='left')
+        regression_df.rename(columns={'norm': 'norm_other'}, inplace=True)
+        regression_df.drop(['word'], axis=1, inplace=True)
+
+        # Add norm for surname
+        regression_df = regression_df.merge(
+            norm_df[['word', 'norm', 'decade']],
+            left_on=['decade', 'surname'], right_on=['decade', 'word'], validate='many_to_one', how='left')
+        regression_df.rename(columns={'norm': 'norm_surname'}, inplace=True)
+        regression_df.drop(['word'], axis=1, inplace=True)
+
+        regression_df.loc[regression_df['type'] == 'aggregated', 'norm_other'] = None
+        regression_df.loc[regression_df['type'] == 'aggregated', 'norm_surname'] = None
+
     return regression_df
 
 
 def main(args):
     # Load word_df and vectors
     word_df = pd.read_csv(os.path.join(args.input_path, 'word_df_median.csv'))
+    word_df = word_df.loc[(word_df['k'] == args.negative) & (word_df['d'] == args.d)]
 
     if args.vectors == 'HistWords':
         vectors = bias_utils.load_coha(input_dir=args.vector_path)
     elif args.vectors == 'SPPMI':
         vectors = bias_utils.load_SPPMI(input_dir=args.vector_path, negative=args.negative)
+    elif args.vectors == 'SGNS':
+        vectors = bias_utils.load_coha_SGNS(
+            input_dir=args.vector_path, negative=args.negative, d=args.d, norm=False)
     else:
         raise Exception('Check vectors')
 
@@ -267,7 +295,8 @@ def main(args):
     regression_df = regression_inputs(args=args, vectors=vectors, word_df=word_df)
     regression_df['wl'] = regression_df['wl'].apply(lambda wl: wl.replace('_', ' '))
     regression_df.to_csv(os.path.join(
-        args.output_path, 'regression_df_MG{}_CS{}.csv'.format(args.match_garg, args.cosine)), index=False)
+        args.output_path, f"regression_df_MG{args.match_garg}_CS{args.cosine}_k{args.negative}_d{args.d}.csv"),
+        index=False)
 
     # Plot
     if args.visualize:
@@ -377,8 +406,10 @@ if __name__ == '__main__':
     parser.add_argument("-output_path", type=str, required=False)
     parser.add_argument("-vector_path", type=str, required=False)
     parser.add_argument("-negative", type=int, required=False)
+    parser.add_argument("-d", type=int, required=False)
     parser.add_argument("-vectors", type=str, required=True)
     parser.add_argument("-deviation", type=str)
+    parser.add_argument("-norm_dir", type=str, required=False)
 
     args = parser.parse_args()
 
@@ -394,6 +425,9 @@ if __name__ == '__main__':
         args.vector_path = '../../Replication-Garg-2018/data/coha-word'
     elif args.vectors == 'SPPMI':
         args.vector_path = '../results/SPPMI/vectors'
+    elif args.vectors == 'SGNS':
+        args.vector_path = '../../COHA-SGNS/results/vectors'
+        args.norm_dir = '../../COHA-SGNS/results/norm/SGNS-norms.csv'
     else:
         raise Exception('Check vectors')
 
@@ -402,6 +436,7 @@ if __name__ == '__main__':
     print(f'[INFO] Using deviation: {args.deviation}')
 
     args.negative = 5
-    print(f'[INFO] Using negative sampling parameter: {args.negative}')
+    args.d = 300
+    print(f'[INFO] Using negative sampling parameter: {args.negative} and dimension: {args.d}')
 
     main(args)
