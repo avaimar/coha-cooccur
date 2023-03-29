@@ -166,7 +166,17 @@ def main(args):
                 os.makedirs(args.output_dir)
 
             args.K = negative
-            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True)
+            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True, aligned=False)
+            vector_PMIs(args, vectors, pmi_df)
+
+    elif args.vectors == 'SGNSAligned':
+        for negative in tqdm([5]):
+            args.output_dir = os.path.join('..', 'results', 'SGNSAligned', f'{args.vectors}-{negative}-{args.d}')
+            if not os.path.exists(args.output_dir):
+                os.makedirs(args.output_dir)
+
+            args.K = negative
+            vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True, aligned=True)
             vector_PMIs(args, vectors, pmi_df)
     else:
         raise Exception('[ERROR] Check vectors. ')
@@ -178,7 +188,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-K", type=int)
     parser.add_argument("-d", type=int, default=300)
-    parser.add_argument("-vectors", type=str, required=True)
+    parser.add_argument("-vectors", type=str, required=True, choices=['HistWords', 'SGNS', 'SGNSAligned'])
     parser.add_argument("-vectors_dir", type=str)
     parser.add_argument("-wlist_dir", type=str)
     parser.add_argument("-bin_dir", type=str)
@@ -192,8 +202,10 @@ if __name__ == '__main__':
     args.wlist_dir = '../../Local/word_lists/'
     if args.vectors == 'HistWords':
         args.vectors_dir = '../../Replication-Garg-2018/data/coha-word'
-    else:
+    elif args.vectors == 'SGNS':
         args.vectors_dir = '../../COHA-SGNS/results/vectors'
+    elif args.vectors == 'SGNSAligned':
+        args.vectors_dir = '../../COHA-SGNS/results/aligned'
     args.word_dict_pkl = '../info/word-dict.pkl'
 
     main(args)

@@ -33,11 +33,11 @@ def main(args):
         pmi_df = pd.read_csv(os.path.join(args.output_dir, 'PMI', 'complete_pmi.csv'))
         pmi_df['k'] = 5
         pmi_df['d'] = 300
-    elif args.vectors == 'SGNS':
+    elif args.vectors in ['SGNS', 'SGNSAligned']:
         pmi_files = glob.glob(os.path.join(args.output_dir, '**', 'complete_pmi.csv'), recursive=True)
         pmi_df = pd.DataFrame()
         for file in pmi_files:
-            name = file.split(os.path.sep)[-2].replace('SGNS-', '')
+            name = file.split(os.path.sep)[-2].replace(f'{args.vectors}-', '')
             k, d = name.split('-')
             if k == '0':
                 continue
@@ -257,7 +257,7 @@ def main(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-vectors", type=str)
+    parser.add_argument("-vectors", type=str, choices=['HistWords', 'SGNS', 'SGNSAligned'])
     parser.add_argument("-output_dir", type=str)
     parser.add_argument("-word_stat", type=str)
     parser.add_argument("-plot", type=bool, default=False)

@@ -10,139 +10,6 @@ from tqdm import tqdm
 import src.bias_utils as bias_utils
 
 
-def quartile_bias_scores(args, vectors, word_list_all, word_df):
-    wls = ['Asian_San_Bruno_All', 'White_San_Bruno_All', 'PNAS Asian Target Words', 'PNAS White Target Words']
-    main_df = pd.DataFrame()
-    regression_df = pd.DataFrame()
-    for decade, model in tqdm(vectors.items()):
-        # Define otherization vectors
-        otherization_idx = [model.key_to_index[w] for w in list(set(word_list_all['Otherization Words'])) if
-                            bias_utils.present_word(model, w)]
-        if args.match_garg:
-            otherization_idx = [model.key_to_index[w] for w in word_list_all['Otherization Words'] if w in model]
-        otherization_vecs = model.vectors[otherization_idx, :]
-
-        # Absolute quartiles (quartiles across all word lists in a decade)
-        decade_df = word_df.loc[word_df['decade'] == int(decade)].copy()
-        try:
-            decade_df['absolute_quartile'] = pd.qcut(
-                decade_df[args.deviation], q=4, labels=[0, 1, 2, 3])
-        except (IndexError, ValueError):
-            continue
-
-        # Generate %Dev relative quartiles (quartiles across the word list in a decade)
-        try:
-            decade_df['relative_quartile'] = decade_df.groupby('Word List')[args.deviation].transform(
-                lambda x: pd.qcut(x, q=4, labels=[0, 1, 2, 3]))
-        except (IndexError, ValueError):
-            continue
-
-        # Ex 1
-        for wl in wls:
-            wl_df = decade_df.loc[decade_df['Word List'] == wl.replace('_', ' ')].copy()
-
-            # Ex 1: Compute bias score for words in each %Dev group: FIX other target group, relative quartile
-            # for main Target group.
-            for quartile in range(4):
-                surnames_dev_quart = list(wl_df.loc[wl_df['relative_quartile'] == quartile]['w'].unique())
-                if 'Asian' in wl:
-                    asian_mean_vec = bias_utils.compute_mean_vector(model, surnames_dev_quart)
-                    white_mean_vec = bias_utils.compute_mean_vector(model, word_list_all[wl.replace('Asian', 'White')])
-                elif 'White' in wl:
-                    asian_mean_vec = bias_utils.compute_mean_vector(model, word_list_all[wl.replace('White', 'Asian')])
-                    white_mean_vec = bias_utils.compute_mean_vector(model, surnames_dev_quart)
-                else:
-                    raise Exception('[ERROR] Check word list type.')
-
-                if asian_mean_vec is not None and white_mean_vec is not None:
-                    bias_score, _, _ = bias_utils.compute_bias_score(
-                        attribute_vecs=otherization_vecs, t1_mean=white_mean_vec, t2_mean=asian_mean_vec,
-                        cosine=args.cosine)
-
-                    # Append to main df
-                    quart_dict = {
-                        'Experiment': ['relative-fixed'], 'decade': [int(decade)], 'wl': [wl],
-                        '%Deviation (quartile)': [quartile], 'Bias score': [bias_score]
-                    }
-                    main_df = pd.concat([main_df, pd.DataFrame.from_dict(quart_dict)])
-
-        # ** Ex 2, 3: Cartesian product: relative-relative and absolute-absolute
-        for quartile_type in ['relative', 'absolute']:
-            for wl in ['{}_San_Bruno_All', 'PNAS {} Target Words']:
-
-                asian_df = decade_df.loc[decade_df['Word List'] == wl.format('Asian').replace('_', ' ')].copy()
-                white_df = decade_df.loc[decade_df['Word List'] == wl.format('White').replace('_', ' ')].copy()
-
-                for quartile_i in range(4):
-                    for quartile_j in range(4):
-                        asian_surnames_dev_quart = list(
-                            asian_df.loc[asian_df['{}_quartile'.format(quartile_type)] == quartile_i]['w'].unique())
-                        white_surnames_dev_quart = list(
-                            white_df.loc[white_df['{}_quartile'.format(quartile_type)] == quartile_j]['w'].unique())
-
-                        asian_mean_vec = bias_utils.compute_mean_vector(model, asian_surnames_dev_quart)
-                        white_mean_vec = bias_utils.compute_mean_vector(model, white_surnames_dev_quart)
-
-                        if asian_mean_vec is not None and white_mean_vec is not None:
-                            bias_score, _, _ = bias_utils.compute_bias_score(
-                                attribute_vecs=otherization_vecs, t1_mean=white_mean_vec, t2_mean=asian_mean_vec,
-                                cosine=args.cosine)
-
-                            # Append to main df
-                            quart_dict = {
-                                'Experiment': ['{}-{}'.format(quartile_type, quartile_type)], 'decade': [int(decade)],
-                                'wl': ['{}'.format(wl)],
-                                '%Deviation (quartile)': ['{}-{}'.format(quartile_i, quartile_j)],
-                                'Bias score': [bias_score]
-                            }
-                            main_df = pd.concat([main_df, pd.DataFrame.from_dict(quart_dict)])
-
-        # ** Ex 4: Varying otherization words
-        for wl in ['{}_San_Bruno_All', 'PNAS {} Target Words']:
-
-            asian_df = decade_df.loc[decade_df['Word List'] == wl.format('Asian').replace('_', ' ')].copy()
-            white_df = decade_df.loc[decade_df['Word List'] == wl.format('White').replace('_', ' ')].copy()
-            otherization_df = decade_df.loc[decade_df['Word List'] == 'Otherization Words'].copy()
-
-            for quartile_a in range(4):
-                for quartile_w in range(4):
-                    for quartile_o in range(4):
-                        # Define surnames
-                        asian_surnames_dev_quart = list(
-                            asian_df.loc[asian_df['relative_quartile'] == quartile_a]['w'].unique())
-                        white_surnames_dev_quart = list(
-                            white_df.loc[white_df['relative_quartile'] == quartile_w]['w'].unique())
-
-                        asian_mean_vec = bias_utils.compute_mean_vector(model, asian_surnames_dev_quart)
-                        white_mean_vec = bias_utils.compute_mean_vector(model, white_surnames_dev_quart)
-
-                        # Define otherization words
-                        otherization_dev_quart = list(
-                            otherization_df.loc[otherization_df['relative_quartile'] == quartile_o]['w'].unique())
-                        otherization_idx = [model.key_to_index[w] for w in list(set(otherization_dev_quart)) if
-                                            bias_utils.present_word(model, w)]
-                        if args.match_garg:
-                            otherization_idx = [model.key_to_index[w] for w in otherization_dev_quart if
-                                                w in model]
-                        otherization_vecs = model.vectors[otherization_idx, :]
-
-                        if asian_mean_vec is not None and white_mean_vec is not None and otherization_vecs is not None:
-                            bias_score, _, _ = bias_utils.compute_bias_score(
-                                attribute_vecs=otherization_vecs, t1_mean=white_mean_vec, t2_mean=asian_mean_vec,
-                                cosine=args.cosine)
-
-                            # Append to main df (Exp 4)
-                            quart_dict = {
-                                'Experiment': ['otherization'], 'decade': [int(decade)],
-                                'wl': ['{}'.format(wl)],
-                                '%Deviation (quartile)': ['{}-{}-{}'.format(quartile_a, quartile_w, quartile_o)],
-                                'Bias score': [bias_score]
-                            }
-                            main_df = pd.concat([main_df, pd.DataFrame.from_dict(quart_dict)])
-
-    return main_df
-
-
 def regression_inputs(args, vectors, word_df):
     # Generate bias scores by quartile
     regression_df = pd.DataFrame()
@@ -240,8 +107,8 @@ def regression_inputs(args, vectors, word_df):
                 regression_df = pd.concat([regression_df, pd.DataFrame.from_dict(quart_dict)])
 
     # Add norms
-    if args.vectors == 'SGNS':
-        norm_df = pd.read_csv(args.norm_dir)
+    if args.vectors in ['SGNS', 'SGNSAligned']:
+        norm_df = pd.read_csv(args.norm_path)
         norm_df = norm_df.loc[(norm_df['k'] == args.negative) & (norm_df['d'] == args.d)]
 
         # Add norm for otherization word
@@ -275,7 +142,10 @@ def main(args):
         vectors = bias_utils.load_SPPMI(input_dir=args.vector_path, negative=args.negative)
     elif args.vectors == 'SGNS':
         vectors = bias_utils.load_coha_SGNS(
-            input_dir=args.vector_path, negative=args.negative, d=args.d, norm=False)
+            input_dir=args.vector_path, negative=args.negative, d=args.d, norm=False, aligned=False)
+    elif args.vectors == 'SGNSAligned':
+        vectors = bias_utils.load_coha_SGNS(
+            input_dir=args.vector_path, negative=args.negative, d=args.d, norm=False, aligned=True)
     else:
         raise Exception('Check vectors')
 
@@ -283,24 +153,19 @@ def main(args):
     with open('../../Local/word_lists/word_lists_all.json', 'r') as file:
         word_list_all = json.load(file)
 
-    # Generate bias scores by quartile
-    if False:
-        main_df = quartile_bias_scores(args=args, vectors=vectors, word_list_all=word_list_all, word_df=word_df)
-        main_df['wl'] = main_df['wl'].apply(lambda wl: wl.replace('_', ' '))
-        main_df.to_csv(os.path.join(
-            args.output_path, 'quartile_df_MG{}_CS{}.csv'.format(args.match_garg, args.cosine)), index=False)
-
     # Regression inputs
     print('[INFO] Generating inputs for regression')
     regression_df = regression_inputs(args=args, vectors=vectors, word_df=word_df)
     regression_df['wl'] = regression_df['wl'].apply(lambda wl: wl.replace('_', ' '))
     regression_df.to_csv(os.path.join(
-        args.output_path, f"regression_df_MG{args.match_garg}_CS{args.cosine}_k{args.negative}_d{args.d}.csv"),
+        args.output_path,
+        f"regression_df_MG{args.match_garg}_CS{args.cosine}_k{args.negative}_d{args.d}.csv"),
         index=False)
 
     # Plot
     if args.visualize:
-        main_df = pd.read_csv(os.path.join(args.output_path, 'quartile_df_MG{}_CS{}.csv'.format(args.match_garg, args.cosine)))
+        main_df = pd.read_csv(os.path.join(
+            args.output_path, f"regression_df_MG{args.match_garg}_CS{args.cosine}_k{args.negative}_d{args.d}.csv"))
 
         # Plot Ex 1
         exp1 = main_df.loc[(main_df['Experiment'] == 'relative-fixed') & (main_df['decade'] > 1890)].copy()
@@ -407,11 +272,16 @@ if __name__ == '__main__':
     parser.add_argument("-vector_path", type=str, required=False)
     parser.add_argument("-negative", type=int, required=False)
     parser.add_argument("-d", type=int, required=False)
-    parser.add_argument("-vectors", type=str, required=True)
+    parser.add_argument("-vectors", type=str, required=True, choices=['HistWords', 'SGNS', 'SGNSAligned', 'SPPMI'])
     parser.add_argument("-deviation", type=str)
-    parser.add_argument("-norm_dir", type=str, required=False)
+    parser.add_argument("-norm_path", type=str, required=False)
 
     args = parser.parse_args()
+
+    # Set up
+    args.negative = 5
+    args.d = 300
+    print(f'[INFO] Using negative sampling parameter: {args.negative} and dimension: {args.d}')
 
     # Paths
     args.input_path = f'../results/{args.vectors}/PMI'
@@ -427,16 +297,15 @@ if __name__ == '__main__':
         args.vector_path = '../results/SPPMI/vectors'
     elif args.vectors == 'SGNS':
         args.vector_path = '../../COHA-SGNS/results/vectors'
-        args.norm_dir = '../../COHA-SGNS/results/norm/SGNS-norms.csv'
+        args.norm_path = '../../COHA-SGNS/results/norm/SGNS-norms.csv'
+    elif args.vectors == 'SGNSAligned':
+        args.vector_path = f'../../COHA-SGNS/results/aligned'
+        args.norm_path = f'../../COHA-SGNS/results/norm/SGNS-norms-aligned.csv'
     else:
         raise Exception('Check vectors')
 
     # Deviation
     args.deviation = '%D-SPPMI-PMI' if args.vectors == 'SPPMI' else '%D-dot-PMI'
     print(f'[INFO] Using deviation: {args.deviation}')
-
-    args.negative = 5
-    args.d = 300
-    print(f'[INFO] Using negative sampling parameter: {args.negative} and dimension: {args.d}')
 
     main(args)

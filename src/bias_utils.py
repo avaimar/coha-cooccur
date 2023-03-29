@@ -42,12 +42,13 @@ def load_coha(input_dir):
     return vectors
 
 
-def load_coha_SGNS(input_dir, negative, d, norm):
-    norm_str = '-norm' if norm else ''
+def load_coha_SGNS(input_dir, negative, d, norm, aligned):
     vectors = {}
+    norm_str = '-norm' if norm else ''
+    align_str = '-a' if aligned else ''
     for decade in list(range(1810, 2010, 10)):
         vectors[f'{decade}'] = KeyedVectors.load(
-            str(os.path.join(input_dir, f"wv-{decade}-{negative}-{d}{norm_str}.kv")))
+            str(os.path.join(input_dir, f"wv-{decade}-{negative}-{d}{align_str}{norm_str}.kv")))
     return vectors
 
 
