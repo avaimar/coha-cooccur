@@ -141,7 +141,7 @@ def vector_PMIs(args, vectors, pmi):
 def main(args):
     # Create main matrix (without log k) -- Note: this is COHA dependent only and does not vary
     # according to the vectors (k, d, HistWords/SGNS).
-    args.output_dir = os.path.join('..', 'results', 'PMI')
+    #args.output_dir = os.path.join('..', 'results', 'PMI')
     os.makedirs(args.output_dir, exist_ok=True)
     pmi_df = PMI(args)
 
@@ -152,7 +152,7 @@ def main(args):
         args.d = 300
 
         args.output_dir = os.path.join('..', 'results', f'HistWords', 'PMI')
-        os.makedirs(args.output_dir)
+        os.makedirs(args.output_dir, exist_ok=True)
 
         vectors = load_coha(args.vectors_dir)
         vector_PMIs(args, vectors, pmi_df)
@@ -163,7 +163,7 @@ def main(args):
         for negative in tqdm(list(range(0, 30, 5))):
             args.output_dir = os.path.join('..', 'results', 'SGNS', f'{args.vectors}-{negative}-{args.d}')
             if not os.path.exists(args.output_dir):
-                os.makedirs(args.output_dir)
+                os.makedirs(args.output_dir, exist_ok=True)
 
             args.K = negative
             vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True, aligned=False)
@@ -178,6 +178,8 @@ def main(args):
             args.K = negative
             vectors = load_coha_SGNS(input_dir=args.vectors_dir, negative=negative, d=args.d, norm=True, aligned=True)
             vector_PMIs(args, vectors, pmi_df)
+    elif args.vectors == "None":
+        pass
     else:
         raise Exception('[ERROR] Check vectors. ')
 
@@ -188,24 +190,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-K", type=int)
     parser.add_argument("-d", type=int, default=300)
-    parser.add_argument("-vectors", type=str, required=True, choices=['HistWords', 'SGNS', 'SGNSAligned'])
+    parser.add_argument("-vectors", type=str, required=True, choices=['HistWords', 'SGNS', 'SGNSAligned', 'None'])
     parser.add_argument("-vectors_dir", type=str)
-    parser.add_argument("-wlist_dir", type=str)
-    parser.add_argument("-bin_dir", type=str)
-    parser.add_argument("-word_dict_pkl", type=str)
-    parser.add_argument("-output_dir", type=str)
+    parser.add_argument("-wlist_dir", type=str, default='../../Local/word_lists/')
+    parser.add_argument("-bin_dir", type=str, default='../cooccurs/word/4')
+    parser.add_argument("-word_dict_pkl", type=str, default='../info/word-dict.pkl')
+    parser.add_argument("-output_dir", type=str, default='../results/PMI')
 
     args = parser.parse_args()
 
     # Paths
-    args.bin_dir = '../cooccurs/word/4'
-    args.wlist_dir = '../../Local/word_lists/'
     if args.vectors == 'HistWords':
         args.vectors_dir = '../../Replication-Garg-2018/data/coha-word'
     elif args.vectors == 'SGNS':
         args.vectors_dir = '../../COHA-SGNS/results/vectors'
     elif args.vectors == 'SGNSAligned':
         args.vectors_dir = '../../COHA-SGNS/results/aligned'
-    args.word_dict_pkl = '../info/word-dict.pkl'
 
     main(args)
